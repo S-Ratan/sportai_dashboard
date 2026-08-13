@@ -5,9 +5,9 @@ from pathlib import Path
 import mediapipe as mp
 
 
-# ---------------------------------------------------------
+# =========================================================
 # MediaPipe Tasks API
-# ---------------------------------------------------------
+# =========================================================
 
 BaseOptions = mp.tasks.BaseOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
@@ -16,9 +16,9 @@ PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
 PoseLandmark = mp.tasks.vision.PoseLandmark
 
 
-# ---------------------------------------------------------
-# Model path
-# ---------------------------------------------------------
+# =========================================================
+# Model
+# =========================================================
 
 MODEL_PATH = (
     Path(__file__).resolve().parents[2]
@@ -27,13 +27,13 @@ MODEL_PATH = (
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # Angle calculation
-# ---------------------------------------------------------
+# =========================================================
 
 def calculate_angle(a, b, c):
     """
-    Calculate angle ABC using three 2D points.
+    Calculate angle ABC from 2D points.
     """
 
     angle = math.degrees(
@@ -49,58 +49,64 @@ def calculate_angle(a, b, c):
     return round(angle, 2)
 
 
-# ---------------------------------------------------------
+# =========================================================
+# Convert MediaPipe landmark to point
+# =========================================================
+
+def point(landmark):
+    return (
+        landmark.x,
+        landmark.y
+    )
+
+
+# =========================================================
 # Analyze video
-# ---------------------------------------------------------
+# =========================================================
 
 def analyze_video(video_path: str):
 
-    video_path = str(video_path)
+    path = Path(video_path)
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Video not found: {video_path}"
+        )
+
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"MediaPipe model not found: {MODEL_PATH}"
+        )
 
     # -----------------------------------------------------
     # Open video
     # -----------------------------------------------------
 
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(str(path))
 
     if not cap.isOpened():
         raise ValueError(
             f"Could not open video: {video_path}"
         )
 
-    # -----------------------------------------------------
-    # Counters
-    # -----------------------------------------------------
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    if not fps or fps <= 0:
+        fps = 30.0
 
     frame_count = 0
     detected_frames = 0
 
-    # IMPORTANT:
-    # MediaPipe VIDEO mode requires strictly increasing
-    # timestamps.
     last_timestamp_ms = -1
 
     # -----------------------------------------------------
-    # Results
+    # Frame-by-frame data
     # -----------------------------------------------------
 
-    knee_angles = []
-    hip_angles = []
-    elbow_angles = []
+    frame_data = []
 
     # -----------------------------------------------------
-    # Check model
-    # -----------------------------------------------------
-
-    if not MODEL_PATH.exists():
-        cap.release()
-
-        raise FileNotFoundError(
-            f"MediaPipe model not found: {MODEL_PATH}"
-        )
-
-    # -----------------------------------------------------
-    # MediaPipe PoseLandmarker configuration
+    # MediaPipe configuration
     # -----------------------------------------------------
 
     base_options = BaseOptions(
@@ -118,7 +124,7 @@ def analyze_video(video_path: str):
     )
 
     # -----------------------------------------------------
-    # Create PoseLandmarker
+    # Create landmarker
     # -----------------------------------------------------
 
     with PoseLandmarker.create_from_options(
@@ -126,10 +132,6 @@ def analyze_video(video_path: str):
     ) as landmarker:
 
         while True:
-
-            # -------------------------------------------------
-            # Read frame
-            # -------------------------------------------------
 
             success, frame = cap.read()
 
@@ -139,7 +141,7 @@ def analyze_video(video_path: str):
             frame_count += 1
 
             # -------------------------------------------------
-            # OpenCV BGR -> RGB
+            # BGR -> RGB
             # -------------------------------------------------
 
             rgb_frame = cv2.cvtColor(
@@ -148,7 +150,7 @@ def analyze_video(video_path: str):
             )
 
             # -------------------------------------------------
-            # Convert to MediaPipe Image
+            # MediaPipe image
             # -------------------------------------------------
 
             mp_image = mp.Image(
@@ -157,23 +159,12 @@ def analyze_video(video_path: str):
             )
 
             # -------------------------------------------------
-            # Generate reliable timestamp
+            # Timestamp
             # -------------------------------------------------
-
-            fps = cap.get(cv2.CAP_PROP_FPS)
-
-            if not fps or fps <= 0:
-                fps = 30.0
 
             timestamp_ms = int(
                 (frame_count - 1) * 1000 / fps
             )
-
-            # -------------------------------------------------
-            # IMPORTANT:
-            # MediaPipe requires timestamps to be strictly
-            # increasing.
-            # -------------------------------------------------
 
             if timestamp_ms <= last_timestamp_ms:
                 timestamp_ms = last_timestamp_ms + 1
@@ -181,7 +172,7 @@ def analyze_video(video_path: str):
             last_timestamp_ms = timestamp_ms
 
             # -------------------------------------------------
-            # Run MediaPipe Pose Detection
+            # Pose detection
             # -------------------------------------------------
 
             result = landmarker.detect_for_video(
@@ -190,7 +181,7 @@ def analyze_video(video_path: str):
             )
 
             # -------------------------------------------------
-            # Check if pose detected
+            # No pose
             # -------------------------------------------------
 
             if not result.pose_landmarks:
@@ -202,112 +193,252 @@ def analyze_video(video_path: str):
             detected_frames += 1
 
             # -------------------------------------------------
-            # First detected person
+            # First person
             # -------------------------------------------------
 
             landmarks = result.pose_landmarks[0]
 
-            # -------------------------------------------------
-            # Get right-side landmarks
-            # -------------------------------------------------
+            # =================================================
+            # RIGHT SIDE
+            # =================================================
 
-            right_shoulder = landmarks[
-                PoseLandmark.RIGHT_SHOULDER
-            ]
+            rs = landmarks[PoseLandmark.RIGHT_SHOULDER]
+            re = landmarks[PoseLandmark.RIGHT_ELBOW]
+            rw = landmarks[PoseLandmark.RIGHT_WRIST]
 
-            right_elbow = landmarks[
-                PoseLandmark.RIGHT_ELBOW
-            ]
+            rh = landmarks[PoseLandmark.RIGHT_HIP]
+            rk = landmarks[PoseLandmark.RIGHT_KNEE]
+            ra = landmarks[PoseLandmark.RIGHT_ANKLE]
 
-            right_wrist = landmarks[
-                PoseLandmark.RIGHT_WRIST
-            ]
+            # =================================================
+            # LEFT SIDE
+            # =================================================
 
-            right_hip = landmarks[
-                PoseLandmark.RIGHT_HIP
-            ]
+            ls = landmarks[PoseLandmark.LEFT_SHOULDER]
+            le = landmarks[PoseLandmark.LEFT_ELBOW]
+            lw = landmarks[PoseLandmark.LEFT_WRIST]
 
-            right_knee = landmarks[
-                PoseLandmark.RIGHT_KNEE
-            ]
+            lh = landmarks[PoseLandmark.LEFT_HIP]
+            lk = landmarks[PoseLandmark.LEFT_KNEE]
+            la = landmarks[PoseLandmark.LEFT_ANKLE]
 
-            right_ankle = landmarks[
-                PoseLandmark.RIGHT_ANKLE
-            ]
+            # =================================================
+            # Convert to 2D points
+            # =================================================
 
-            # -------------------------------------------------
-            # Convert landmarks to 2D points
-            # -------------------------------------------------
+            right_shoulder = point(rs)
+            right_elbow = point(re)
+            right_wrist = point(rw)
 
-            shoulder = (
-                right_shoulder.x,
-                right_shoulder.y
+            right_hip = point(rh)
+            right_knee = point(rk)
+            right_ankle = point(ra)
+
+            left_shoulder = point(ls)
+            left_elbow = point(le)
+            left_wrist = point(lw)
+
+            left_hip = point(lh)
+            left_knee = point(lk)
+            left_ankle = point(la)
+
+            # =================================================
+            # Joint angles
+            # =================================================
+
+            right_elbow_angle = calculate_angle(
+                right_shoulder,
+                right_elbow,
+                right_wrist
             )
 
-            elbow = (
-                right_elbow.x,
-                right_elbow.y
+            left_elbow_angle = calculate_angle(
+                left_shoulder,
+                left_elbow,
+                left_wrist
             )
 
-            wrist = (
-                right_wrist.x,
-                right_wrist.y
+            right_knee_angle = calculate_angle(
+                right_hip,
+                right_knee,
+                right_ankle
             )
 
-            hip = (
-                right_hip.x,
-                right_hip.y
+            left_knee_angle = calculate_angle(
+                left_hip,
+                left_knee,
+                left_ankle
             )
 
-            knee = (
-                right_knee.x,
-                right_knee.y
+            right_hip_angle = calculate_angle(
+                right_shoulder,
+                right_hip,
+                right_knee
             )
 
-            ankle = (
-                right_ankle.x,
-                right_ankle.y
+            left_hip_angle = calculate_angle(
+                left_shoulder,
+                left_hip,
+                left_knee
             )
 
-            # -------------------------------------------------
-            # Calculate joint angles
-            # -------------------------------------------------
+            # =================================================
+            # Store frame
+            # =================================================
 
-            elbow_angle = calculate_angle(
-                shoulder,
-                elbow,
-                wrist
-            )
+            frame_data.append({
 
-            hip_angle = calculate_angle(
-                shoulder,
-                hip,
-                knee
-            )
+                "frame": frame_count,
 
-            knee_angle = calculate_angle(
-                hip,
-                knee,
-                ankle
-            )
+                "timestamp_ms": timestamp_ms,
 
-            # -------------------------------------------------
-            # Store results
-            # -------------------------------------------------
+                "timestamp_seconds": round(
+                    timestamp_ms / 1000,
+                    3
+                ),
 
-            elbow_angles.append(elbow_angle)
-            hip_angles.append(hip_angle)
-            knee_angles.append(knee_angle)
+                # -----------------------------
+                # Right landmarks
+                # -----------------------------
 
-    # ---------------------------------------------------------
+                "right_shoulder": {
+                    "x": round(rs.x, 5),
+                    "y": round(rs.y, 5),
+                    "z": round(rs.z, 5),
+                    "visibility": round(
+                        rs.visibility, 4
+                    )
+                },
+
+                "right_elbow": {
+                    "x": round(re.x, 5),
+                    "y": round(re.y, 5),
+                    "z": round(re.z, 5),
+                    "visibility": round(
+                        re.visibility, 4
+                    )
+                },
+
+                "right_wrist": {
+                    "x": round(rw.x, 5),
+                    "y": round(rw.y, 5),
+                    "z": round(rw.z, 5),
+                    "visibility": round(
+                        rw.visibility, 4
+                    )
+                },
+
+                "right_hip": {
+                    "x": round(rh.x, 5),
+                    "y": round(rh.y, 5),
+                    "z": round(rh.z, 5),
+                    "visibility": round(
+                        rh.visibility, 4
+                    )
+                },
+
+                "right_knee": {
+                    "x": round(rk.x, 5),
+                    "y": round(rk.y, 5),
+                    "z": round(rk.z, 5),
+                    "visibility": round(
+                        rk.visibility, 4
+                    )
+                },
+
+                "right_ankle": {
+                    "x": round(ra.x, 5),
+                    "y": round(ra.y, 5),
+                    "z": round(ra.z, 5),
+                    "visibility": round(
+                        ra.visibility, 4
+                    )
+                },
+
+                # -----------------------------
+                # Left landmarks
+                # -----------------------------
+
+                "left_shoulder": {
+                    "x": round(ls.x, 5),
+                    "y": round(ls.y, 5),
+                    "z": round(ls.z, 5),
+                    "visibility": round(
+                        ls.visibility, 4
+                    )
+                },
+
+                "left_elbow": {
+                    "x": round(le.x, 5),
+                    "y": round(le.y, 5),
+                    "z": round(le.z, 5),
+                    "visibility": round(
+                        le.visibility, 4
+                    )
+                },
+
+                "left_wrist": {
+                    "x": round(lw.x, 5),
+                    "y": round(lw.y, 5),
+                    "z": round(lw.z, 5),
+                    "visibility": round(
+                        lw.visibility, 4
+                    )
+                },
+
+                "left_hip": {
+                    "x": round(lh.x, 5),
+                    "y": round(lh.y, 5),
+                    "z": round(lh.z, 5),
+                    "visibility": round(
+                        lh.visibility, 4
+                    )
+                },
+
+                "left_knee": {
+                    "x": round(lk.x, 5),
+                    "y": round(lk.y, 5),
+                    "z": round(lk.z, 5),
+                    "visibility": round(
+                        lk.visibility, 4
+                    )
+                },
+
+                "left_ankle": {
+                    "x": round(la.x, 5),
+                    "y": round(la.y, 5),
+                    "z": round(la.z, 5),
+                    "visibility": round(
+                        la.visibility, 4
+                    )
+                },
+
+                # -----------------------------
+                # Angles
+                # -----------------------------
+
+                "right_elbow_angle": right_elbow_angle,
+
+                "left_elbow_angle": left_elbow_angle,
+
+                "right_knee_angle": right_knee_angle,
+
+                "left_knee_angle": left_knee_angle,
+
+                "right_hip_angle": right_hip_angle,
+
+                "left_hip_angle": left_hip_angle,
+            })
+
+    # -----------------------------------------------------
     # Release video
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     cap.release()
 
-    # ---------------------------------------------------------
-    # No pose detected
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
+    # No pose
+    # -----------------------------------------------------
 
     if detected_frames == 0:
 
@@ -316,13 +447,34 @@ def analyze_video(video_path: str):
             "frames": frame_count,
             "detected_frames": 0,
             "pose_detection_rate": 0,
+            "frame_data": []
         }
 
-    # ---------------------------------------------------------
-    # Final analysis
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
+    # Calculate averages
+    # -----------------------------------------------------
+
+    right_knee_angles = [
+        x["right_knee_angle"]
+        for x in frame_data
+    ]
+
+    right_hip_angles = [
+        x["right_hip_angle"]
+        for x in frame_data
+    ]
+
+    right_elbow_angles = [
+        x["right_elbow_angle"]
+        for x in frame_data
+    ]
+
+    # -----------------------------------------------------
+    # Final result
+    # -----------------------------------------------------
 
     return {
+
         "status": "analysis_complete",
 
         "frames": frame_count,
@@ -335,17 +487,22 @@ def analyze_video(video_path: str):
         ),
 
         "average_knee_angle": round(
-            sum(knee_angles) / len(knee_angles),
+            sum(right_knee_angles)
+            / len(right_knee_angles),
             2
-        ) if knee_angles else None,
+        ),
 
         "average_hip_angle": round(
-            sum(hip_angles) / len(hip_angles),
+            sum(right_hip_angles)
+            / len(right_hip_angles),
             2
-        ) if hip_angles else None,
+        ),
 
         "average_elbow_angle": round(
-            sum(elbow_angles) / len(elbow_angles),
+            sum(right_elbow_angles)
+            / len(right_elbow_angles),
             2
-        ) if elbow_angles else None,
+        ),
+
+        "frame_data": frame_data
     }
