@@ -3,6 +3,9 @@ import os
 import uuid
 
 from app.services.pose_service import analyze_video
+from app.services.biomechanics_service import process_frame
+from app.services.performance_engine import calculate_performance
+from app.services.injury_engine import calculate_injury_risk
 
 
 router = APIRouter(prefix="/api", tags=["Analysis"])
@@ -51,7 +54,38 @@ async def analyze_video_endpoint(
 
     try:
 
+        # Step 1: Pose analysis
         analysis = analyze_video(file_path)
+
+        # Step 2: Get raw pose frames
+        raw_frames = analysis.get(
+            "frame_data",
+            []
+        )
+
+        # Step 3: Calculate biomechanics
+        # for every detected frame
+        biomechanics_frames = [
+            process_frame(frame)
+            for frame in raw_frames
+        ]
+
+        # Step 4: Calculate performance
+        performance = calculate_performance(
+            biomechanics_frames
+        )
+
+        # Step 5: Calculate injury risk
+        injury = calculate_injury_risk(
+            biomechanics_frames
+        )
+
+        # Step 6: Add results to analysis
+        analysis["biomechanics"] = biomechanics_frames
+
+        analysis["performance"] = performance
+
+        analysis["injury_risk"] = injury
 
     except Exception as e:
 
