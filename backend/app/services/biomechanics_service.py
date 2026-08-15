@@ -1,11 +1,12 @@
 import math
+from typing import Optional, Dict, List, Any
 
 
 # =========================================================
 # Utility
 # =========================================================
 
-def is_valid_angle(angle):
+def is_valid_angle(angle: Optional[float]) -> bool:
     """
     Check whether an angle is physically usable.
     """
@@ -15,7 +16,7 @@ def is_valid_angle(angle):
     return 20 <= angle <= 180
 
 
-def clean_angle(angle, fallback=None):
+def clean_angle(angle: Optional[float], fallback: Optional[float] = None) -> Optional[float]:
     """
     Remove obviously invalid/outlier angles.
     """
@@ -29,7 +30,7 @@ def clean_angle(angle, fallback=None):
 # Asymmetry
 # =========================================================
 
-def calculate_asymmetry(right, left):
+def calculate_asymmetry(right: Optional[float], left: Optional[float]) -> Optional[float]:
     """
     Absolute difference between left and right angles.
     """
@@ -44,11 +45,11 @@ def calculate_asymmetry(right, left):
 # =========================================================
 
 def calculate_trunk_tilt(
-    left_shoulder,
-    right_shoulder,
-    left_hip,
-    right_hip
-):
+    left_shoulder: Optional[Dict[str, float]],
+    right_shoulder: Optional[Dict[str, float]],
+    left_hip: Optional[Dict[str, float]],
+    right_hip: Optional[Dict[str, float]]
+) -> Optional[float]:
     """
     Calculate trunk tilt using the center of shoulders
     and center of hips.
@@ -102,9 +103,9 @@ def calculate_trunk_tilt(
 # =========================================================
 
 def calculate_shoulder_symmetry(
-    left_shoulder,
-    right_shoulder
-):
+    left_shoulder: Optional[Dict[str, float]],
+    right_shoulder: Optional[Dict[str, float]]
+) -> Optional[float]:
     """
     Difference between left and right shoulder height.
 
@@ -129,9 +130,9 @@ def calculate_shoulder_symmetry(
 # =========================================================
 
 def calculate_hip_alignment(
-    left_hip,
-    right_hip
-):
+    left_hip: Optional[Dict[str, float]],
+    right_hip: Optional[Dict[str, float]]
+) -> Optional[float]:
     """
     Difference between left and right hip height.
 
@@ -155,7 +156,7 @@ def calculate_hip_alignment(
 # Process One Frame
 # =========================================================
 
-def process_frame(frame):
+def process_frame(frame: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert raw pose frame data into biomechanics metrics.
     """
@@ -255,4 +256,269 @@ def process_frame(frame):
         "hip_alignment": hip_alignment,
     }
 
+    return result
+
+
+# =========================================================
+# Range of Motion (ROM)
+# =========================================================
+
+def calculate_knee_rom(angles: List[Optional[float]]) -> Optional[Dict[str, float]]:
+    """
+    Calculate knee Range of Motion (ROM) statistics.
+    
+    Args:
+        angles: List of knee angles (in degrees) across frames
+        
+    Returns:
+        Dictionary with min_angle, max_angle, range, and average,
+        or None if no valid angles
+    """
+    valid_angles = [a for a in angles if is_valid_angle(a)]
+    
+    if not valid_angles:
+        return None
+    
+    min_angle = round(min(valid_angles), 2)
+    max_angle = round(max(valid_angles), 2)
+    avg_angle = round(sum(valid_angles) / len(valid_angles), 2)
+    rom = round(max_angle - min_angle, 2)
+    
+    return {
+        "min_angle": min_angle,
+        "max_angle": max_angle,
+        "avg_angle": avg_angle,
+        "range_of_motion": rom
+    }
+
+
+def calculate_hip_rom(angles: List[Optional[float]]) -> Optional[Dict[str, float]]:
+    """
+    Calculate hip Range of Motion (ROM) statistics.
+    
+    Args:
+        angles: List of hip angles (in degrees) across frames
+        
+    Returns:
+        Dictionary with min_angle, max_angle, range, and average,
+        or None if no valid angles
+    """
+    valid_angles = [a for a in angles if is_valid_angle(a)]
+    
+    if not valid_angles:
+        return None
+    
+    min_angle = round(min(valid_angles), 2)
+    max_angle = round(max(valid_angles), 2)
+    avg_angle = round(sum(valid_angles) / len(valid_angles), 2)
+    rom = round(max_angle - min_angle, 2)
+    
+    return {
+        "min_angle": min_angle,
+        "max_angle": max_angle,
+        "avg_angle": avg_angle,
+        "range_of_motion": rom
+    }
+
+
+# =========================================================
+# Trunk Angle Analysis
+# =========================================================
+
+def calculate_trunk_angles(trunk_tilts: List[Optional[float]]) -> Optional[Dict[str, float]]:
+    """
+    Calculate detailed trunk angle statistics across all frames.
+    
+    Args:
+        trunk_tilts: List of trunk tilt angles across frames
+        
+    Returns:
+        Dictionary with min, max, average trunk angles and range,
+        or None if no valid angles
+    """
+    valid_tilts = [t for t in trunk_tilts if t is not None and 0 <= t <= 90]
+    
+    if not valid_tilts:
+        return None
+    
+    min_angle = round(min(valid_tilts), 2)
+    max_angle = round(max(valid_tilts), 2)
+    avg_angle = round(sum(valid_tilts) / len(valid_tilts), 2)
+    rom = round(max_angle - min_angle, 2)
+    
+    return {
+        "min_angle": min_angle,
+        "max_angle": max_angle,
+        "avg_angle": avg_angle,
+        "range_of_motion": rom
+    }
+
+
+# =========================================================
+# Angular Velocity (frame-to-frame change)
+# =========================================================
+
+def calculate_angular_velocity(angles: List[Optional[float]]) -> Optional[float]:
+    """
+    Calculate average angular velocity (frame-to-frame angular change).
+    
+    Angular velocity = average absolute angle change per frame (degrees/frame)
+    
+    Args:
+        angles: List of angles (in degrees) across consecutive frames
+        
+    Returns:
+        Average angular velocity in degrees/frame, or None if insufficient data
+    """
+    valid_angles = [a for a in angles if is_valid_angle(a)]
+    
+    if len(valid_angles) < 2:
+        return None
+    
+    frame_changes = []
+    for i in range(1, len(valid_angles)):
+        change = abs(valid_angles[i] - valid_angles[i-1])
+        frame_changes.append(change)
+    
+    if not frame_changes:
+        return None
+    
+    avg_velocity = round(sum(frame_changes) / len(frame_changes), 2)
+    return avg_velocity
+
+
+# =========================================================
+# Aggregate Biomechanics (ROM, Velocity, Asymmetry Summary)
+# =========================================================
+
+def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Aggregate per-frame biomechanics data to compute ROM, angular velocity,
+    and asymmetry summaries across all frames.
+    
+    This consumes the output of process_frame() for all frames and produces
+    comprehensive biomechanical statistics.
+    
+    Args:
+        biomechanics_frames: List of per-frame biomechanics dictionaries
+                           (output from process_frame())
+    
+    Returns:
+        Dictionary with aggregated biomechanics metrics:
+        {
+            "left_knee": { rom_stats, velocity },
+            "right_knee": { rom_stats, velocity },
+            "left_hip": { rom_stats, velocity },
+            "right_hip": { rom_stats, velocity },
+            "trunk": { rom_stats, velocity },
+            "asymmetry_summary": {
+                "avg_knee_asymmetry": float,
+                "avg_hip_asymmetry": float,
+                "avg_elbow_asymmetry": float
+            }
+        }
+        
+        Returns None if input is empty or invalid.
+    """
+    
+    if not biomechanics_frames or len(biomechanics_frames) == 0:
+        return None
+    
+    # Extract angle sequences for each joint
+    left_knee_angles = [f.get("left_knee_angle") for f in biomechanics_frames]
+    right_knee_angles = [f.get("right_knee_angle") for f in biomechanics_frames]
+    
+    left_hip_angles = [f.get("left_hip_angle") for f in biomechanics_frames]
+    right_hip_angles = [f.get("right_hip_angle") for f in biomechanics_frames]
+    
+    trunk_tilts = [f.get("trunk_tilt") for f in biomechanics_frames]
+    
+    # Extract asymmetry values
+    knee_asymmetries = [f.get("knee_asymmetry") for f in biomechanics_frames]
+    hip_asymmetries = [f.get("hip_asymmetry") for f in biomechanics_frames]
+    elbow_asymmetries = [f.get("elbow_asymmetry") for f in biomechanics_frames]
+    
+    # Calculate ROM and angular velocity for each joint
+    left_knee_rom = calculate_knee_rom(left_knee_angles)
+    right_knee_rom = calculate_knee_rom(right_knee_angles)
+    
+    left_hip_rom = calculate_hip_rom(left_hip_angles)
+    right_hip_rom = calculate_hip_rom(right_hip_angles)
+    
+    trunk_analysis = calculate_trunk_angles(trunk_tilts)
+    
+    # Calculate angular velocities
+    left_knee_velocity = calculate_angular_velocity(left_knee_angles)
+    right_knee_velocity = calculate_angular_velocity(right_knee_angles)
+    
+    left_hip_velocity = calculate_angular_velocity(left_hip_angles)
+    right_hip_velocity = calculate_angular_velocity(right_hip_angles)
+    
+    trunk_velocity = calculate_angular_velocity(trunk_tilts)
+    
+    # Calculate average asymmetries
+    valid_knee_asymmetries = [a for a in knee_asymmetries if a is not None]
+    valid_hip_asymmetries = [a for a in hip_asymmetries if a is not None]
+    valid_elbow_asymmetries = [a for a in elbow_asymmetries if a is not None]
+    
+    avg_knee_asymmetry = round(
+        sum(valid_knee_asymmetries) / len(valid_knee_asymmetries), 2
+    ) if valid_knee_asymmetries else None
+    
+    avg_hip_asymmetry = round(
+        sum(valid_hip_asymmetries) / len(valid_hip_asymmetries), 2
+    ) if valid_hip_asymmetries else None
+    
+    avg_elbow_asymmetry = round(
+        sum(valid_elbow_asymmetries) / len(valid_elbow_asymmetries), 2
+    ) if valid_elbow_asymmetries else None
+    
+    # Build result
+    result = {
+        "left_knee": {},
+        "right_knee": {},
+        "left_hip": {},
+        "right_hip": {},
+        "trunk": {},
+        "asymmetry_summary": {}
+    }
+    
+    # Add left knee metrics
+    if left_knee_rom:
+        result["left_knee"].update(left_knee_rom)
+    if left_knee_velocity is not None:
+        result["left_knee"]["avg_angular_velocity"] = left_knee_velocity
+    
+    # Add right knee metrics
+    if right_knee_rom:
+        result["right_knee"].update(right_knee_rom)
+    if right_knee_velocity is not None:
+        result["right_knee"]["avg_angular_velocity"] = right_knee_velocity
+    
+    # Add left hip metrics
+    if left_hip_rom:
+        result["left_hip"].update(left_hip_rom)
+    if left_hip_velocity is not None:
+        result["left_hip"]["avg_angular_velocity"] = left_hip_velocity
+    
+    # Add right hip metrics
+    if right_hip_rom:
+        result["right_hip"].update(right_hip_rom)
+    if right_hip_velocity is not None:
+        result["right_hip"]["avg_angular_velocity"] = right_hip_velocity
+    
+    # Add trunk metrics
+    if trunk_analysis:
+        result["trunk"].update(trunk_analysis)
+    if trunk_velocity is not None:
+        result["trunk"]["avg_angular_velocity"] = trunk_velocity
+    
+    # Add asymmetry summary
+    if avg_knee_asymmetry is not None:
+        result["asymmetry_summary"]["avg_knee_asymmetry"] = avg_knee_asymmetry
+    if avg_hip_asymmetry is not None:
+        result["asymmetry_summary"]["avg_hip_asymmetry"] = avg_hip_asymmetry
+    if avg_elbow_asymmetry is not None:
+        result["asymmetry_summary"]["avg_elbow_asymmetry"] = avg_elbow_asymmetry
+    
     return result
