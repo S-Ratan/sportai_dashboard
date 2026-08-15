@@ -54,3 +54,4 @@ dist/
 build/
 .next/
 .nuxt/
+backend/.env
