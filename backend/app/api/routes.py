@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.schemas import AnalysisResponse
-from app.services.biomechanics_service import aggregate_biomechanics, process_frame
+from app.services.biomechanics_service import aggregate_biomechanics, build_biomechanics_chart, process_frame
 from app.services.models import RuleBasedPerformanceModel, RuleBasedRiskModel
 from app.services.pose_service import analyze_video
 from app.services.quality_service import calculate_analysis_quality
@@ -50,6 +50,7 @@ def run_analysis(video_path: str) -> dict:
         "video_info": info,
         "biomechanics": frames,
         "biomechanics_summary": biomechanics,
+        "biomechanics_chart": build_biomechanics_chart(biomechanics),
         "performance": performance,
         "injury_risk": injury_risk,
         **quality,

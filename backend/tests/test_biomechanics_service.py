@@ -18,6 +18,7 @@ from app.services.biomechanics_service import (
     calculate_trunk_angles,
     calculate_angular_velocity,
     aggregate_biomechanics,
+    build_biomechanics_chart,
     is_valid_angle,
     clean_angle,
 )
@@ -372,6 +373,22 @@ def test_aggregate_biomechanics_comprehensive():
     assert result["asymmetry_summary"]["avg_elbow_asymmetry"] == 3.23  # (3+3.5+3.2)/3
     
     print("✓ test_aggregate_biomechanics_comprehensive passed")
+
+
+def test_biomechanics_chart_contains_four_measured_joint_groups():
+    summary = {
+        "left_knee": {"avg_angle": 90.0}, "right_knee": {"avg_angle": 108.0},
+        "left_hip": {"avg_angle": 72.0}, "right_hip": {"avg_angle": 81.0},
+        "left_ankle": {"avg_angle": 99.0}, "right_ankle": {"avg_angle": 117.0},
+        "left_shoulder": {"avg_angle": 126.0}, "right_shoulder": {"avg_angle": 144.0},
+    }
+    chart = build_biomechanics_chart(summary)
+
+    assert list(chart) == ["knee", "hip", "ankle", "shoulder"]
+    assert chart["knee"] == {"left": 50.0, "right": 60.0}
+    assert chart["hip"] == {"left": 40.0, "right": 45.0}
+    assert chart["ankle"] == {"left": 55.0, "right": 65.0}
+    assert chart["shoulder"] == {"left": 70.0, "right": 80.0}
 
 
 def test_aggregate_biomechanics_missing_fields():

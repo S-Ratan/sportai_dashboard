@@ -1,4 +1,4 @@
-from backend.app.db.supabase_client import supabase
+from app.db.supabase_client import supabase
 
 
 def test_supabase_connection():

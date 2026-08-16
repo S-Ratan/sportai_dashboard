@@ -42,8 +42,53 @@ import {
   ResponsiveContainer
 } from 'recharts';
 
-function buildDashboardData(analysis, reports) {
-  const latest = analysis || reports[0]?.pose_data || {};
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8001').replace(/\/$/, '');
+
+const DEMO_DASHBOARD = {
+  kpis: { performanceScore: 78, movementRisk: 32, asymmetry: 18, fatigue: 45 },
+  biomechanicsMetrics: [
+    { joint: 'Knee', leftSide: 78, rightSide: 71 },
+    { joint: 'Hip', leftSide: 66, rightSide: 62 },
+    { joint: 'Ankle', leftSide: 54, rightSide: 58 },
+    { joint: 'Shoulder', leftSide: 72, rightSide: 68 },
+  ],
+  movementRiskFactors: [
+    { factor: 'Knee Valgus', severity: 'High', score: 68 },
+    { factor: 'Hip Drop', severity: 'Medium', score: 45 },
+    { factor: 'Trunk Rotation', severity: 'Low', score: 25 },
+  ],
+  aiCoachTips: [
+    { title: 'Knee Alignment', priority: 'High', recommendation: 'Focus on keeping knees aligned over toes during lateral movements. Add 3×10 single-leg squats daily.' },
+    { title: 'Hip Stability', priority: 'Medium', recommendation: 'Strengthen glute medius with band walks and lateral lunges to improve hip control.' },
+    { title: 'Fatigue Management', priority: 'High', recommendation: 'Your fatigue level is rising. Consider extending rest intervals or reducing training volume.' },
+  ],
+  historicalTrend: [
+    { date: 'Mon', performance: 70 }, { date: 'Tue', performance: 73 }, { date: 'Wed', performance: 71 },
+    { date: 'Thu', performance: 75 }, { date: 'Fri', performance: 74 }, { date: 'Sat', performance: 78 }, { date: 'Sun', performance: 78 },
+  ],
+  videoAnalysisData: { lastAnalyzed: '2024-08-13 14:30', framesProcessed: 1240, detectionRate: 98.5, videoName: 'Training Session_Aug13.mp4' },
+};
+
+function toDashboardSeverity(severity) {
+  const normalized = String(severity || '').toLowerCase();
+  if (normalized === 'moderate') return 'Medium';
+  if (normalized === 'high') return 'High';
+  return 'Low';
+}
+
+function formatBackendDetail(detail) {
+  if (typeof detail === 'string') return detail;
+  if (detail) return JSON.stringify(detail);
+  return 'No additional detail was returned by the backend.';
+}
+
+function normalizedJointAngle(angle) {
+  return typeof angle === 'number' ? Math.round((angle / 180) * 10000) / 100 : undefined;
+}
+
+function buildDashboardData(analysis, reports, videoName) {
+  const latest = analysis || reports[0]?.pose_data;
+  if (!latest) return { ...DEMO_DASHBOARD, isDemo: true };
   const metrics = latest.injury_risk?.metrics || latest.performance?.metrics || {};
   const summary = latest.biomechanics_summary || {};
   const sessions = reports.slice(0, 7).reverse();
@@ -62,22 +107,33 @@ function buildDashboardData(analysis, reports) {
     },
     historicalTrend: trend,
     biomechanicsMetrics: [
-      { joint: 'Knee', leftSide: summary.left_knee?.avg_angle, rightSide: summary.right_knee?.avg_angle },
-      { joint: 'Hip', leftSide: summary.left_hip?.avg_angle, rightSide: summary.right_hip?.avg_angle },
-    ].filter((item) => item.leftSide != null || item.rightSide != null),
-    movementRiskFactors: (latest.recommendations || []).map((item) => ({ factor: item.category, severity: item.severity, score: latest.injury_risk?.risk_score ?? 0 })),
-    aiCoachTips: latest.recommendations || [],
+      { joint: 'Knee', leftSide: latest.biomechanics_chart?.knee?.left ?? normalizedJointAngle(summary.left_knee?.avg_angle), rightSide: latest.biomechanics_chart?.knee?.right ?? normalizedJointAngle(summary.right_knee?.avg_angle) },
+      { joint: 'Hip', leftSide: latest.biomechanics_chart?.hip?.left ?? normalizedJointAngle(summary.left_hip?.avg_angle), rightSide: latest.biomechanics_chart?.hip?.right ?? normalizedJointAngle(summary.right_hip?.avg_angle) },
+      { joint: 'Ankle', leftSide: latest.biomechanics_chart?.ankle?.left, rightSide: latest.biomechanics_chart?.ankle?.right },
+      { joint: 'Shoulder', leftSide: latest.biomechanics_chart?.shoulder?.left, rightSide: latest.biomechanics_chart?.shoulder?.right },
+    ],
+    movementRiskFactors: (latest.recommendations || []).map((item) => ({
+      factor: item.category,
+      severity: toDashboardSeverity(item.severity),
+      score: Math.min(100, Math.round((item.observed_value / item.threshold) * 50)),
+    })),
+    aiCoachTips: (latest.recommendations || []).map((item) => ({
+      title: item.category,
+      priority: toDashboardSeverity(item.severity),
+      recommendation: item.recommendation,
+    })),
     videoAnalysisData: {
-      lastAnalyzed: reports[0]?.created_at ? new Date(reports[0].created_at).toLocaleString() : 'No completed analysis',
+      lastAnalyzed: analysis ? new Date().toLocaleString() : reports[0]?.created_at ? new Date(reports[0].created_at).toLocaleString() : 'No completed analysis',
       framesProcessed: latest.frames ?? '—',
       detectionRate: latest.pose_detection_rate ?? reports[0]?.pose_detection_rate ?? '—',
-      videoName: reports[0]?.video_name || 'No completed analysis',
-    }
+      videoName: videoName || reports[0]?.video_name || 'No completed analysis',
+    },
+    isDemo: false,
   };
 }
 
 /* --- PS-02 Dashboard Component --- */
-function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
+function PS02Dashboard({ analysis, videoUrl, videoName, userId, onReanalyze }) {
   const [reports, setReports] = useState([]);
   const [dashboardError, setDashboardError] = useState('');
   useEffect(() => {
@@ -88,7 +144,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
         else setReports(data || []);
       });
   }, [userId, analysis]);
-  const dashboardData = buildDashboardData(analysis, reports);
+  const dashboardData = buildDashboardData(analysis, reports, videoName);
   // KPI Card Component
   function DashboardKPICard({ title, value, suffix, icon: Icon, trendUp = true, color = 'green' }) {
     const colorClass = color === 'green' ? 'kpi-green' : color === 'orange' ? 'kpi-orange' : 'kpi-red';
@@ -127,7 +183,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
             </div>
             <div className="analysis-stat">
               <span className="stat-label">Detection Rate</span>
-              <span className="stat-value-large">{data.detectionRate}%</span>
+              <span className="stat-value-large">{typeof data.detectionRate === 'number' ? `${data.detectionRate.toFixed(1)}%` : data.detectionRate}</span>
             </div>
           </div>
           <div className="video-info">
@@ -137,7 +193,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
               <p className="video-meta">Training session • High quality</p>
             </div>
           </div>
-          <button className="outline" style={{ width: '100%', marginTop: '12px' }}>
+          <button className="outline" onClick={onReanalyze} style={{ width: '100%', marginTop: '12px' }}>
             <Upload size={16} style={{ marginRight: '8px' }} /> Re-analyze Video
           </button>
         </div>
@@ -157,14 +213,14 @@ function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
             <RechartsBarChart data={dashboardData.biomechanicsMetrics}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="joint" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" />
+              <YAxis domain={[0, 100]} stroke="#94a3b8" />
               <Tooltip 
                 contentStyle={{ background: '#1e293b', border: '1px solid #334155' }}
                 cursor={{ fill: 'rgba(16, 185, 129, 0.1)' }}
               />
               <Legend />
-              <Bar dataKey="leftSide" fill="#10b981" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="rightSide" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="leftSide" name="Left Side" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="rightSide" name="Right Side" fill="#3b82f6" radius={[4, 4, 0, 0]} />
             </RechartsBarChart>
           </ResponsiveContainer>
           <div className="biomechanics-legend">
@@ -325,7 +381,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
           color="orange"
         />
         <DashboardKPICard 
-          title="Analysis Confidence" 
+          title={dashboardData.isDemo ? 'Fatigue Level' : 'Analysis Confidence'}
           value={dashboardData.kpis.fatigue} 
           suffix="/100" 
           icon={Zap}
@@ -794,15 +850,21 @@ function SportAIDashboard() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('http://127.0.0.1:8000/api/analyze', {
+      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(`Backend returned an invalid response (HTTP ${response.status}).`);
+      }
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Video analysis failed');
+        throw new Error(`Analysis failed\nHTTP status: ${response.status}\nBackend detail: ${formatBackendDetail(data.detail)}`);
       }
 
       setResult(data);
@@ -843,12 +905,18 @@ function SportAIDashboard() {
             injury_risk_score: report.injury_risk_score, risk_level: report.risk_level,
             pose_data: report.pose_data
           }]);
-          if (legacyError) throw new Error(`Analysis finished but report could not be saved: ${legacyError.message}`);
+          if (legacyError) {
+            setError(`Analysis completed, but the report could not be saved: ${legacyError.message}`);
+          }
         }
       }
     } catch (err) {
       console.error('Analysis error:', err);
-      setError(err.message || 'Failed to connect to backend server.');
+      if (err instanceof TypeError) {
+        setError(`Backend unavailable.\nMake sure FastAPI is running on: ${API_BASE_URL}`);
+      } else {
+        setError(err.message || 'Video analysis failed.');
+      }
     } finally {
       setLoading(false);
     }
@@ -910,7 +978,7 @@ function SportAIDashboard() {
           </div>
 
           {activeTab === 'dashboard' ? (
-            <PS02Dashboard analysis={result?.analysis} videoUrl={analyzedVideoUrl} videoName={analyzedVideoName} userId={user.id} />
+            <PS02Dashboard analysis={result?.analysis} videoUrl={analyzedVideoUrl} videoName={analyzedVideoName} userId={user.id} onReanalyze={() => setActiveTab('analyze')} />
           ) : activeTab === 'history' ? (
             <HistoryView userId={user.id} />
           ) : (
@@ -944,7 +1012,7 @@ function SportAIDashboard() {
                     </div>
                     <div>
                       <b style={{ color: '#ef4444' }}>Error</b>
-                      <span>{error}</span>
+                      <span style={{ whiteSpace: 'pre-line' }}>{error}</span>
                     </div>
                   </div>
                 )}

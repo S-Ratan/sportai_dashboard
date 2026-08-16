@@ -15,9 +15,9 @@ This system provides biomechanical analysis and injury-risk screening indicators
 
 ## Run
 
-1. Copy `.env.example` to `.env` and supply the Supabase URL and anonymous key.
+1. Copy `.env.example` to `.env`, supply the Supabase URL and anonymous key, and keep `VITE_API_URL=http://127.0.0.1:8001` for local development.
 2. Run `backend/migrations/20260816_analysis_reports.sql` in the Supabase SQL editor after reviewing the existing `analysis_reports` table.
-3. Start the backend with `cd backend; .venv\Scripts\python -m uvicorn app.main:app --reload`.
+3. Start the backend with `cd backend; .venv\Scripts\python -m uvicorn app.main:app --reload --port 8001`.
 4. Start the dashboard with `npm run dev`.
 
 ## API
