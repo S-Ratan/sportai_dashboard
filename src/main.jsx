@@ -42,61 +42,53 @@ import {
   ResponsiveContainer
 } from 'recharts';
 
-/* --- PS-02 Dashboard Mock Data --- */
-const mockDashboardData = {
-  kpis: {
-    performanceScore: 78,
-    movementRisk: 32,
-    asymmetry: 18,
-    fatigue: 45
-  },
-  historicalTrend: [
-    { date: 'Mon', performance: 72, risk: 28, fatigue: 40 },
-    { date: 'Tue', performance: 75, risk: 30, fatigue: 42 },
-    { date: 'Wed', performance: 78, risk: 32, fatigue: 45 },
-    { date: 'Thu', performance: 76, risk: 35, fatigue: 48 },
-    { date: 'Fri', performance: 74, risk: 38, fatigue: 52 },
-    { date: 'Sat', performance: 79, risk: 31, fatigue: 43 },
-    { date: 'Sun', performance: 80, risk: 29, fatigue: 41 }
-  ],
-  biomechanicsMetrics: [
-    { joint: 'Knee', leftSide: 78, rightSide: 72, status: 'Monitor' },
-    { joint: 'Hip', leftSide: 82, rightSide: 80, status: 'Good' },
-    { joint: 'Ankle', leftSide: 85, rightSide: 83, status: 'Good' },
-    { joint: 'Shoulder', leftSide: 76, rightSide: 74, status: 'Monitor' }
-  ],
-  movementRiskFactors: [
-    { factor: 'Knee Valgus', severity: 'High', score: 68 },
-    { factor: 'Hip Drop', severity: 'Medium', score: 45 },
-    { factor: 'Trunk Rotation', severity: 'Low', score: 25 }
-  ],
-  aiCoachTips: [
-    {
-      title: 'Knee Alignment',
-      tip: 'Focus on keeping knees aligned over toes during lateral movements. Add 3x10 single-leg squats daily.',
-      priority: 'High'
+function buildDashboardData(analysis, reports) {
+  const latest = analysis || reports[0]?.pose_data || {};
+  const metrics = latest.injury_risk?.metrics || latest.performance?.metrics || {};
+  const summary = latest.biomechanics_summary || {};
+  const sessions = reports.slice(0, 7).reverse();
+  const trend = sessions.map((report) => ({
+    date: new Date(report.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    performance: report.performance_score,
+    risk: report.injury_risk_score,
+    confidence: report.analysis_confidence ?? report.pose_data?.analysis_confidence,
+  }));
+  return {
+    kpis: {
+      performanceScore: latest.performance?.performance_score ?? reports[0]?.performance_score ?? '—',
+      movementRisk: latest.injury_risk?.risk_score ?? reports[0]?.injury_risk_score ?? '—',
+      asymmetry: metrics.average_knee_asymmetry ?? '—',
+      fatigue: latest.analysis_confidence ?? reports[0]?.analysis_confidence ?? '—',
     },
-    {
-      title: 'Hip Stability',
-      tip: 'Strengthen glute medius with band walks and lateral lunges to improve hip control.',
-      priority: 'Medium'
-    },
-    {
-      title: 'Fatigue Management',
-      tip: 'Your fatigue level is rising. Consider extending rest intervals or reducing training volume.',
-      priority: 'High'
+    historicalTrend: trend,
+    biomechanicsMetrics: [
+      { joint: 'Knee', leftSide: summary.left_knee?.avg_angle, rightSide: summary.right_knee?.avg_angle },
+      { joint: 'Hip', leftSide: summary.left_hip?.avg_angle, rightSide: summary.right_hip?.avg_angle },
+    ].filter((item) => item.leftSide != null || item.rightSide != null),
+    movementRiskFactors: (latest.recommendations || []).map((item) => ({ factor: item.category, severity: item.severity, score: latest.injury_risk?.risk_score ?? 0 })),
+    aiCoachTips: latest.recommendations || [],
+    videoAnalysisData: {
+      lastAnalyzed: reports[0]?.created_at ? new Date(reports[0].created_at).toLocaleString() : 'No completed analysis',
+      framesProcessed: latest.frames ?? '—',
+      detectionRate: latest.pose_detection_rate ?? reports[0]?.pose_detection_rate ?? '—',
+      videoName: reports[0]?.video_name || 'No completed analysis',
     }
-  ],
-  videoAnalysisData: {
-    lastAnalyzed: '2024-08-13 14:30',
-    framesProcessed: 1240,
-    detectionRate: 98.5,
-    videoName: 'Training_Session_Aug13.mp4'
-  }
-};
+  };
+}
 
 /* --- PS-02 Dashboard Component --- */
-function PS02Dashboard({ analysis, videoUrl, videoName }) {
+function PS02Dashboard({ analysis, videoUrl, videoName, userId }) {
+  const [reports, setReports] = useState([]);
+  const [dashboardError, setDashboardError] = useState('');
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from('analysis_reports').select('*').eq('user_id', userId)
+      .order('created_at', { ascending: false }).then(({ data, error }) => {
+        if (error) setDashboardError('Dashboard data could not be loaded.');
+        else setReports(data || []);
+      });
+  }, [userId, analysis]);
+  const dashboardData = buildDashboardData(analysis, reports);
   // KPI Card Component
   function DashboardKPICard({ title, value, suffix, icon: Icon, trendUp = true, color = 'green' }) {
     const colorClass = color === 'green' ? 'kpi-green' : color === 'orange' ? 'kpi-orange' : 'kpi-red';
@@ -117,7 +109,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
 
   // Video Analysis Panel
   function VideoAnalysisPanel() {
-    const data = mockDashboardData.videoAnalysisData;
+    const data = dashboardData.videoAnalysisData;
     return (
       <div className="card">
         <div className="card-header">
@@ -162,7 +154,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
         </div>
         <div className="panel-content">
           <ResponsiveContainer width="100%" height={280}>
-            <RechartsBarChart data={mockDashboardData.biomechanicsMetrics}>
+            <RechartsBarChart data={dashboardData.biomechanicsMetrics}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="joint" stroke="#94a3b8" />
               <YAxis stroke="#94a3b8" />
@@ -198,7 +190,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
           <h3><AlertTriangle size={20} style={{ marginRight: '8px' }} /> Movement Risk Assessment</h3>
         </div>
         <div className="panel-content">
-          {mockDashboardData.movementRiskFactors.map((item, idx) => (
+          {dashboardData.movementRiskFactors.length ? dashboardData.movementRiskFactors.map((item, idx) => (
             <div key={idx} className="risk-factor-item">
               <div className="risk-factor-header">
                 <span className="risk-factor-name">{item.factor}</span>
@@ -216,7 +208,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
                 <span className="score-label">{item.score}/100</span>
               </div>
             </div>
-          ))}
+          )) : <p className="muted">No calculated risk factors are available.</p>}
         </div>
       </div>
     );
@@ -236,7 +228,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
           <h3><Brain size={20} style={{ marginRight: '8px' }} /> AI Coach Recommendations</h3>
         </div>
         <div className="panel-content">
-          {mockDashboardData.aiCoachTips.map((tip, idx) => (
+          {dashboardData.aiCoachTips.length ? dashboardData.aiCoachTips.map((tip, idx) => (
             <div key={idx} className="coach-tip">
               <div className="tip-header">
                 <span className="tip-title">{tip.title}</span>
@@ -244,9 +236,9 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
                   {tip.priority}
                 </span>
               </div>
-              <p className="tip-content">{tip.tip}</p>
+              <p className="tip-content">{tip.recommendation}</p>
             </div>
-          ))}
+          )) : <p className="muted">Recommendations appear after a completed analysis.</p>}
         </div>
       </div>
     );
@@ -261,7 +253,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
         </div>
         <div className="panel-content">
           <ResponsiveContainer width="100%" height={320}>
-            <RechartsLineChart data={mockDashboardData.historicalTrend}>
+            <RechartsLineChart data={dashboardData.historicalTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="date" stroke="#94a3b8" />
               <YAxis stroke="#94a3b8" />
@@ -290,12 +282,12 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
               />
               <Line 
                 type="monotone" 
-                dataKey="fatigue" 
+                dataKey="confidence" 
                 stroke="#f59e0b" 
                 strokeWidth={2}
                 dot={{ fill: '#f59e0b', r: 4 }}
                 activeDot={{ r: 6 }}
-                name="Fatigue"
+                name="Analysis Confidence"
               />
             </RechartsLineChart>
           </ResponsiveContainer>
@@ -310,7 +302,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
       <section className="kpi-section">
         <DashboardKPICard 
           title="Performance Score" 
-          value={mockDashboardData.kpis.performanceScore} 
+          value={dashboardData.kpis.performanceScore} 
           suffix="/100" 
           icon={Gauge}
           trendUp={true}
@@ -318,7 +310,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
         />
         <DashboardKPICard 
           title="Movement Risk" 
-          value={mockDashboardData.kpis.movementRisk} 
+          value={dashboardData.kpis.movementRisk} 
           suffix="/100" 
           icon={AlertTriangle}
           trendUp={false}
@@ -326,15 +318,15 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
         />
         <DashboardKPICard 
           title="Asymmetry" 
-          value={mockDashboardData.kpis.asymmetry} 
+          value={dashboardData.kpis.asymmetry} 
           suffix="/100" 
           icon={BarChart3}
           trendUp={false}
           color="orange"
         />
         <DashboardKPICard 
-          title="Fatigue Level" 
-          value={mockDashboardData.kpis.fatigue} 
+          title="Analysis Confidence" 
+          value={dashboardData.kpis.fatigue} 
           suffix="/100" 
           icon={Zap}
           trendUp={true}
@@ -352,6 +344,7 @@ function PS02Dashboard({ analysis, videoUrl, videoName }) {
           <HistoricalTrendPanel />
         </div>
       </div>
+      {dashboardError && <p className="muted" style={{ color: '#ef4444' }}>{dashboardError}</p>}
       {analysis && <VideoSkeletonOverlay analysis={analysis} videoUrl={videoUrl} videoName={videoName} />}
     </div>
   );
@@ -427,14 +420,20 @@ function AnalysisReportView({ analysis }) {
           icon={AlertTriangle}
           warning
         />
+        <Stat
+          title="Analysis Confidence"
+          value={analysis.analysis_confidence ?? '-'}
+          suffix="/100"
+          icon={Target}
+        />
       </section>
 
       <div className="grid-2">
         <Card title="Pose Analysis">
           <Risk
             name="Pose Detection Rate"
-            score={((analysis.detected_frames || 0) / (analysis.frames || 1)) * 100}
-            level={`${analysis.detected_frames || 0} / ${analysis.frames || 0} frames`}
+            score={analysis.pose_detection_rate ?? ((analysis.detected_frames || 0) / (analysis.frames || 1)) * 100}
+            level={analysis.frames != null ? `${analysis.detected_frames || 0} / ${analysis.frames || 0} frames` : `${analysis.pose_detection_rate ?? 0}%`}
           />
           <Risk
             name="Knee Angle"
@@ -590,7 +589,13 @@ function HistoryView({ userId }) {
           <p className="muted mb-15">
             Analyzed on: {new Date(selectedReport.created_at).toLocaleString()}
           </p>
-          <AnalysisReportView analysis={selectedReport.pose_data} />
+          <AnalysisReportView analysis={selectedReport.pose_data || {
+            performance: { performance_score: selectedReport.performance_score, performance_level: selectedReport.performance_level },
+            injury_risk: { risk_score: selectedReport.injury_risk_score, risk_level: selectedReport.risk_level, metrics: selectedReport.key_metrics || {} },
+            pose_detection_rate: selectedReport.pose_detection_rate,
+            analysis_confidence: selectedReport.analysis_confidence,
+            recommendations: selectedReport.recommendations || []
+          }} />
         </Card>
       </div>
     );
@@ -808,24 +813,37 @@ function SportAIDashboard() {
       setAnalyzedVideoName(file.name);
 
       if (user) {
-        const { error: dbError } = await supabase
-          .from('analysis_reports')
-          .insert([
-            {
-              user_id: user.id,
-              video_name: file.name,
-              performance_score: data.analysis?.performance?.performance_score,
-              performance_level: data.analysis?.performance?.performance_level,
-              injury_risk_score: data.analysis?.injury_risk?.risk_score,
-              risk_level: data.analysis?.injury_risk?.risk_level,
-              pose_data: data.analysis
-            }
-          ]);
-
+        const report = {
+          user_id: user.id,
+          analysis_id: data.analysis_id,
+          video_id: data.file_id,
+          video_name: file.name,
+          sport: 'Cricket',
+          activity: 'Video analysis',
+          status: data.analysis?.status || 'analyzed',
+          performance_score: data.analysis?.performance?.performance_score,
+          performance_level: data.analysis?.performance?.performance_level,
+          injury_risk_score: data.analysis?.injury_risk?.risk_score,
+          risk_level: data.analysis?.injury_risk?.risk_level,
+          pose_detection_rate: data.analysis?.pose_detection_rate,
+          analysis_confidence: data.analysis?.analysis_confidence,
+          analysis_quality: data.analysis?.analysis_quality,
+          quality_level: data.analysis?.quality_level,
+          quality_warnings: data.analysis?.quality_warnings || [],
+          key_metrics: data.analysis?.injury_risk?.metrics || {},
+          recommendations: data.analysis?.recommendations || [],
+          pose_data: data.analysis
+        };
+        const { error: dbError } = await supabase.from('analysis_reports').insert([report]);
         if (dbError) {
-          console.error('Error saving to Supabase database:', dbError.message);
-        } else {
-          console.log('Analysis report saved to Supabase!');
+          // The legacy fallback keeps existing deployments functional until the migration is applied.
+          const { error: legacyError } = await supabase.from('analysis_reports').insert([{
+            user_id: user.id, video_name: file.name,
+            performance_score: report.performance_score, performance_level: report.performance_level,
+            injury_risk_score: report.injury_risk_score, risk_level: report.risk_level,
+            pose_data: report.pose_data
+          }]);
+          if (legacyError) throw new Error(`Analysis finished but report could not be saved: ${legacyError.message}`);
         }
       }
     } catch (err) {
@@ -892,7 +910,7 @@ function SportAIDashboard() {
           </div>
 
           {activeTab === 'dashboard' ? (
-            <PS02Dashboard analysis={result?.analysis} videoUrl={analyzedVideoUrl} videoName={analyzedVideoName} />
+            <PS02Dashboard analysis={result?.analysis} videoUrl={analyzedVideoUrl} videoName={analyzedVideoName} userId={user.id} />
           ) : activeTab === 'history' ? (
             <HistoryView userId={user.id} />
           ) : (
