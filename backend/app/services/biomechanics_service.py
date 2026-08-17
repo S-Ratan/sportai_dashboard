@@ -189,6 +189,22 @@ def process_frame(frame: Dict[str, Any]) -> Dict[str, Any]:
         frame.get("left_hip_angle")
     )
 
+    right_ankle = clean_angle(
+        frame.get("right_ankle_angle")
+    )
+
+    left_ankle = clean_angle(
+        frame.get("left_ankle_angle")
+    )
+
+    right_shoulder = clean_angle(
+        frame.get("right_shoulder_angle")
+    )
+
+    left_shoulder = clean_angle(
+        frame.get("left_shoulder_angle")
+    )
+
     # -----------------------------------------------------
     # Biomechanics
     # -----------------------------------------------------
@@ -231,6 +247,12 @@ def process_frame(frame: Dict[str, Any]) -> Dict[str, Any]:
 
         "right_hip_angle": right_hip,
         "left_hip_angle": left_hip,
+
+        "right_ankle_angle": right_ankle,
+        "left_ankle_angle": left_ankle,
+
+        "right_shoulder_angle": right_shoulder,
+        "left_shoulder_angle": left_shoulder,
 
         # Asymmetry
         "elbow_asymmetry": calculate_asymmetry(
@@ -430,6 +452,12 @@ def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optiona
     
     left_hip_angles = [f.get("left_hip_angle") for f in biomechanics_frames]
     right_hip_angles = [f.get("right_hip_angle") for f in biomechanics_frames]
+
+    left_ankle_angles = [f.get("left_ankle_angle") for f in biomechanics_frames]
+    right_ankle_angles = [f.get("right_ankle_angle") for f in biomechanics_frames]
+
+    left_shoulder_angles = [f.get("left_shoulder_angle") for f in biomechanics_frames]
+    right_shoulder_angles = [f.get("right_shoulder_angle") for f in biomechanics_frames]
     
     trunk_tilts = [f.get("trunk_tilt") for f in biomechanics_frames]
     
@@ -444,6 +472,12 @@ def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optiona
     
     left_hip_rom = calculate_hip_rom(left_hip_angles)
     right_hip_rom = calculate_hip_rom(right_hip_angles)
+
+    left_ankle_rom = calculate_knee_rom(left_ankle_angles)
+    right_ankle_rom = calculate_knee_rom(right_ankle_angles)
+
+    left_shoulder_rom = calculate_knee_rom(left_shoulder_angles)
+    right_shoulder_rom = calculate_knee_rom(right_shoulder_angles)
     
     trunk_analysis = calculate_trunk_angles(trunk_tilts)
     
@@ -453,6 +487,12 @@ def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optiona
     
     left_hip_velocity = calculate_angular_velocity(left_hip_angles)
     right_hip_velocity = calculate_angular_velocity(right_hip_angles)
+
+    left_ankle_velocity = calculate_angular_velocity(left_ankle_angles)
+    right_ankle_velocity = calculate_angular_velocity(right_ankle_angles)
+
+    left_shoulder_velocity = calculate_angular_velocity(left_shoulder_angles)
+    right_shoulder_velocity = calculate_angular_velocity(right_shoulder_angles)
     
     trunk_velocity = calculate_angular_velocity(trunk_tilts)
     
@@ -479,6 +519,10 @@ def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optiona
         "right_knee": {},
         "left_hip": {},
         "right_hip": {},
+        "left_ankle": {},
+        "right_ankle": {},
+        "left_shoulder": {},
+        "right_shoulder": {},
         "trunk": {},
         "asymmetry_summary": {}
     }
@@ -506,6 +550,17 @@ def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optiona
         result["right_hip"].update(right_hip_rom)
     if right_hip_velocity is not None:
         result["right_hip"]["avg_angular_velocity"] = right_hip_velocity
+
+    for side, joint_rom, velocity in (
+        ("left_ankle", left_ankle_rom, left_ankle_velocity),
+        ("right_ankle", right_ankle_rom, right_ankle_velocity),
+        ("left_shoulder", left_shoulder_rom, left_shoulder_velocity),
+        ("right_shoulder", right_shoulder_rom, right_shoulder_velocity),
+    ):
+        if joint_rom:
+            result[side].update(joint_rom)
+        if velocity is not None:
+            result[side]["avg_angular_velocity"] = velocity
     
     # Add trunk metrics
     if trunk_analysis:
@@ -522,3 +577,26 @@ def aggregate_biomechanics(biomechanics_frames: List[Dict[str, Any]]) -> Optiona
         result["asymmetry_summary"]["avg_elbow_asymmetry"] = avg_elbow_asymmetry
     
     return result
+
+
+def build_biomechanics_chart(summary: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Optional[float]]]:
+    """Return normalized left/right joint-angle scores for the dashboard chart.
+
+    The chart is intentionally a 0-100 representation of measured mean joint
+    angles (0-180 degrees), not placeholder values. Raw degree measurements
+    remain available in ``biomechanics_summary``.
+    """
+    summary = summary or {}
+
+    def score(key: str) -> Optional[float]:
+        angle = summary.get(key, {}).get("avg_angle")
+        if not isinstance(angle, (int, float)):
+            return None
+        return round(max(0, min(angle, 180)) / 180 * 100, 2)
+
+    return {
+        "knee": {"left": score("left_knee"), "right": score("right_knee")},
+        "hip": {"left": score("left_hip"), "right": score("right_hip")},
+        "ankle": {"left": score("left_ankle"), "right": score("right_ankle")},
+        "shoulder": {"left": score("left_shoulder"), "right": score("right_shoulder")},
+    }

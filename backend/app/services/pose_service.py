@@ -209,6 +209,7 @@ def analyze_video(video_path: str):
             rh = landmarks[PoseLandmark.RIGHT_HIP]
             rk = landmarks[PoseLandmark.RIGHT_KNEE]
             ra = landmarks[PoseLandmark.RIGHT_ANKLE]
+            rf = landmarks[PoseLandmark.RIGHT_FOOT_INDEX]
 
             # =================================================
             # LEFT SIDE
@@ -221,6 +222,7 @@ def analyze_video(video_path: str):
             lh = landmarks[PoseLandmark.LEFT_HIP]
             lk = landmarks[PoseLandmark.LEFT_KNEE]
             la = landmarks[PoseLandmark.LEFT_ANKLE]
+            lf = landmarks[PoseLandmark.LEFT_FOOT_INDEX]
 
             # =================================================
             # Convert to 2D points
@@ -233,6 +235,7 @@ def analyze_video(video_path: str):
             right_hip = point(rh)
             right_knee = point(rk)
             right_ankle = point(ra)
+            right_foot = point(rf)
 
             left_shoulder = point(ls)
             left_elbow = point(le)
@@ -241,6 +244,7 @@ def analyze_video(video_path: str):
             left_hip = point(lh)
             left_knee = point(lk)
             left_ankle = point(la)
+            left_foot = point(lf)
 
             # =================================================
             # Joint angles
@@ -280,6 +284,30 @@ def analyze_video(video_path: str):
                 left_shoulder,
                 left_hip,
                 left_knee
+            )
+
+            right_ankle_angle = calculate_angle(
+                right_knee,
+                right_ankle,
+                right_foot
+            )
+
+            left_ankle_angle = calculate_angle(
+                left_knee,
+                left_ankle,
+                left_foot
+            )
+
+            right_shoulder_angle = calculate_angle(
+                right_elbow,
+                right_shoulder,
+                right_hip
+            )
+
+            left_shoulder_angle = calculate_angle(
+                left_elbow,
+                left_shoulder,
+                left_hip
             )
 
             # =================================================
@@ -355,6 +383,13 @@ def analyze_video(video_path: str):
                     )
                 },
 
+                "right_foot": {
+                    "x": round(rf.x, 5),
+                    "y": round(rf.y, 5),
+                    "z": round(rf.z, 5),
+                    "visibility": round(rf.visibility, 4)
+                },
+
                 # -----------------------------
                 # Left landmarks
                 # -----------------------------
@@ -413,6 +448,13 @@ def analyze_video(video_path: str):
                     )
                 },
 
+                "left_foot": {
+                    "x": round(lf.x, 5),
+                    "y": round(lf.y, 5),
+                    "z": round(lf.z, 5),
+                    "visibility": round(lf.visibility, 4)
+                },
+
                 # -----------------------------
                 # Angles
                 # -----------------------------
@@ -428,6 +470,14 @@ def analyze_video(video_path: str):
                 "right_hip_angle": right_hip_angle,
 
                 "left_hip_angle": left_hip_angle,
+
+                "right_ankle_angle": right_ankle_angle,
+
+                "left_ankle_angle": left_ankle_angle,
+
+                "right_shoulder_angle": right_shoulder_angle,
+
+                "left_shoulder_angle": left_shoulder_angle,
             })
 
     # -----------------------------------------------------

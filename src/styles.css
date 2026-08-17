@@ -361,7 +361,7 @@ button.outline {
   gap: 24px;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
