@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
-import { supabase } from './supabaseClient';
+import { authRedirectUrl, supabase } from './supabaseClient';
 import VideoSkeletonOverlay from './VideoSkeletonOverlay';
 import {
   Sparkles,
@@ -80,6 +80,25 @@ function formatBackendDetail(detail) {
   if (typeof detail === 'string') return detail;
   if (detail) return JSON.stringify(detail);
   return 'No additional detail was returned by the backend.';
+}
+
+function formatAuthError(error) {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+
+  if (code === 'email_not_confirmed' || message.includes('email not confirmed')) {
+    return { type: 'email_not_confirmed', message: 'Email not confirmed. Check your inbox for the confirmation email.' };
+  }
+  if (code === 'invalid_credentials' || message.includes('invalid login credentials')) {
+    return { type: 'invalid_credentials', message: 'Invalid email or password.' };
+  }
+  if (code.includes('refresh_token') || code === 'session_not_found' || message.includes('session expired')) {
+    return { type: 'session_expired', message: 'Your session has expired. Please sign in again.' };
+  }
+  if (error?.name === 'AuthRetryableFetchError' || message.includes('failed to fetch') || message.includes('network')) {
+    return { type: 'network', message: 'Unable to connect to authentication service. Check your connection and try again.' };
+  }
+  return { type: 'other', message: 'Authentication could not be completed. Please try again.' };
 }
 
 function normalizedJointAngle(angle) {
@@ -733,19 +752,37 @@ function AuthForm({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState(null);
+  const [authNotice, setAuthNotice] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (!resendCooldown) return undefined;
+    const timer = window.setTimeout(() => setResendCooldown((seconds) => seconds - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    setAuthError('');
+    setAuthError(null);
+    setAuthNotice('');
     setAuthLoading(true);
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: authRedirectUrl ? { emailRedirectTo: authRedirectUrl } : undefined,
+        });
         if (error) throw error;
-        alert('Registration successful! Please log in.');
+        if (!data.session) {
+          setAuthNotice('Account created. Check your inbox and confirm your email before signing in.');
+        } else {
+          setAuthNotice('Account created and signed in successfully.');
+        }
         setIsSignUp(false);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -753,9 +790,31 @@ function AuthForm({ onLoginSuccess }) {
         onLoginSuccess();
       }
     } catch (err) {
-      setAuthError(err.message);
+      setAuthError(formatAuthError(err));
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email || resendCooldown) return;
+    setAuthError(null);
+    setAuthNotice('');
+    setResendLoading(true);
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: authRedirectUrl ? { emailRedirectTo: authRedirectUrl } : undefined,
+      });
+      if (error) throw error;
+      setAuthNotice('Confirmation email sent. Check your inbox.');
+      setResendCooldown(60);
+    } catch (err) {
+      setAuthError(formatAuthError(err));
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -785,14 +844,36 @@ function AuthForm({ onLoginSuccess }) {
 
       {authError && (
         <p className="muted" style={{ color: '#ef4444', marginTop: '10px' }}>
-          {authError}
+          {authError.message}
+        </p>
+      )}
+
+      {authError?.type === 'email_not_confirmed' && (
+        <button
+          type="button"
+          className="outline mt-15"
+          onClick={handleResendConfirmation}
+          disabled={resendLoading || resendCooldown > 0 || !email}
+          style={{ width: '100%' }}
+        >
+          {resendLoading ? 'Sending confirmation email...' : resendCooldown > 0 ? `Resend available in ${resendCooldown}s` : 'Resend confirmation email'}
+        </button>
+      )}
+
+      {authNotice && (
+        <p className="muted" style={{ color: '#10b981', marginTop: '10px' }}>
+          {authNotice}
         </p>
       )}
 
       <p
         className="muted mt-15"
         style={{ cursor: 'pointer', color: '#10b981', textAlign: 'center' }}
-        onClick={() => setIsSignUp(!isSignUp)}
+        onClick={() => {
+          setIsSignUp(!isSignUp);
+          setAuthError(null);
+          setAuthNotice('');
+        }}
       >
         {isSignUp ? 'Already have an account? Log In' : "Don't have an account? Sign Up"}
       </p>
@@ -816,15 +897,30 @@ function SportAIDashboard() {
   }, [analyzedVideoUrl]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
+    let active = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (active) setUser(session?.user ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      switch (event) {
+        case 'INITIAL_SESSION':
+        case 'SIGNED_IN':
+        case 'TOKEN_REFRESHED':
+        case 'USER_UPDATED':
+        case 'SIGNED_OUT':
+          setUser(session?.user ?? null);
+          break;
+        default:
+          break;
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleLogout = async () => {
