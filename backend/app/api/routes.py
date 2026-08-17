@@ -3,6 +3,7 @@
 The browser Supabase client carries the user's session, allowing RLS to enforce
 athlete isolation. The API deliberately does not accept a caller-supplied user id.
 """
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.services.recommendation_engine import generate_recommendations
 from app.services.video_service import get_video_info
 
 router = APIRouter(prefix="/api", tags=["Analysis"])
+logger = logging.getLogger(__name__)
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
@@ -33,6 +35,11 @@ def _validate_upload(filename: str, contents: bytes) -> str:
     if len(contents) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"Video exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit.")
     return extension
+
+
+def _public_analysis_error(error: OSError | ValueError, upload_path: Path) -> str:
+    """Keep the cause useful without returning the container's filesystem paths."""
+    return str(error).replace(str(upload_path), "uploaded video")
 
 
 def run_analysis(video_path: str) -> dict:
@@ -75,8 +82,13 @@ async def analyze_video_endpoint(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except (ValueError, OSError) as error:
-        raise HTTPException(422, f"Video could not be analyzed: {error}") from error
+        logger.exception("Video analysis could not process upload %s", path.name)
+        raise HTTPException(
+            422,
+            f"Video could not be analyzed: {_public_analysis_error(error, path)}",
+        ) from error
     except Exception as error:
+        logger.exception("Unexpected video analysis failure for upload %s", path.name)
         # Do not expose implementation details or local paths to clients.
         raise HTTPException(500, "Video analysis failed. Please try a valid, clear video.") from error
     finally:
