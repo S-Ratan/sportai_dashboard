@@ -3,9 +3,7 @@ import math
 from pathlib import Path
 
 import mediapipe as mp
-
-
-mp_pose = mp.solutions.pose
+from mediapipe.python.solutions import pose as mp_pose
 
 # Process one frame out of every three at a fixed, inference-friendly size.
 FRAME_SIZE = (640, 360)
