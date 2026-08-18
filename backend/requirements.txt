@@ -1,10 +1,9 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.3
 python-multipart==0.0.32
-mediapipe==0.10.29
-opencv-contrib-python-headless==5.0.0.93
-numpy==2.5.2
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
+numpy==1.26.4
 python-dotenv==1.2.2
 supabase==2.31.0
 pytest==9.1.1
-
