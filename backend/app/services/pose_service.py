@@ -5,26 +5,11 @@ from pathlib import Path
 import mediapipe as mp
 
 
-# =========================================================
-# MediaPipe Tasks API
-# =========================================================
+mp_pose = mp.solutions.pose
 
-BaseOptions = mp.tasks.BaseOptions
-VisionRunningMode = mp.tasks.vision.RunningMode
-PoseLandmarker = mp.tasks.vision.PoseLandmarker
-PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
-PoseLandmark = mp.tasks.vision.PoseLandmark
-
-
-# =========================================================
-# Model
-# =========================================================
-
-MODEL_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "models"
-    / "pose_landmarker_full.task"
-)
+# Process one frame out of every three at a fixed, inference-friendly size.
+FRAME_SIZE = (640, 360)
+FRAME_SKIP = 3
 
 
 # =========================================================
@@ -73,11 +58,6 @@ def analyze_video(video_path: str):
             f"Video not found: {video_path}"
         )
 
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"MediaPipe model not found: {MODEL_PATH}"
-        )
-
     # -----------------------------------------------------
     # Open video
     # -----------------------------------------------------
@@ -95,9 +75,8 @@ def analyze_video(video_path: str):
         fps = 30.0
 
     frame_count = 0
+    processed_frames = 0
     detected_frames = 0
-
-    last_timestamp_ms = -1
 
     # -----------------------------------------------------
     # Frame-by-frame data
@@ -106,30 +85,18 @@ def analyze_video(video_path: str):
     frame_data = []
 
     # -----------------------------------------------------
-    # MediaPipe configuration
+    # MediaPipe configuration. model_complexity=1 selects the balanced model,
+    # avoiding the cost of the heavy pose model.
     # -----------------------------------------------------
 
-    base_options = BaseOptions(
-        model_asset_path=str(MODEL_PATH)
-    )
-
-    options = PoseLandmarkerOptions(
-        base_options=base_options,
-        running_mode=VisionRunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_pose_presence_confidence=0.5,
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        smooth_landmarks=True,
+        enable_segmentation=False,
+        min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
-        output_segmentation_masks=False,
-    )
-
-    # -----------------------------------------------------
-    # Create landmarker
-    # -----------------------------------------------------
-
-    with PoseLandmarker.create_from_options(
-        options
-    ) as landmarker:
+    ) as pose:
 
         while True:
 
@@ -140,6 +107,19 @@ def analyze_video(video_path: str):
 
             frame_count += 1
 
+            # Keep the first frame in each group so frame numbers and
+            # timestamps continue to reference the original video.
+            if (frame_count - 1) % FRAME_SKIP != 0:
+                continue
+
+            processed_frames += 1
+
+            frame = cv2.resize(
+                frame,
+                FRAME_SIZE,
+                interpolation=cv2.INTER_AREA,
+            )
+
             # -------------------------------------------------
             # BGR -> RGB
             # -------------------------------------------------
@@ -149,36 +129,15 @@ def analyze_video(video_path: str):
                 cv2.COLOR_BGR2RGB
             )
 
-            # -------------------------------------------------
-            # MediaPipe image
-            # -------------------------------------------------
-
-            mp_image = mp.Image(
-                image_format=mp.ImageFormat.SRGB,
-                data=rgb_frame
-            )
-
-            # -------------------------------------------------
-            # Timestamp
-            # -------------------------------------------------
-
             timestamp_ms = int(
                 (frame_count - 1) * 1000 / fps
             )
-
-            if timestamp_ms <= last_timestamp_ms:
-                timestamp_ms = last_timestamp_ms + 1
-
-            last_timestamp_ms = timestamp_ms
 
             # -------------------------------------------------
             # Pose detection
             # -------------------------------------------------
 
-            result = landmarker.detect_for_video(
-                mp_image,
-                timestamp_ms
-            )
+            result = pose.process(rgb_frame)
 
             # -------------------------------------------------
             # No pose
@@ -187,42 +146,39 @@ def analyze_video(video_path: str):
             if not result.pose_landmarks:
                 continue
 
-            if len(result.pose_landmarks) == 0:
-                continue
-
             detected_frames += 1
 
             # -------------------------------------------------
             # First person
             # -------------------------------------------------
 
-            landmarks = result.pose_landmarks[0]
+            landmarks = result.pose_landmarks.landmark
 
             # =================================================
             # RIGHT SIDE
             # =================================================
 
-            rs = landmarks[PoseLandmark.RIGHT_SHOULDER]
-            re = landmarks[PoseLandmark.RIGHT_ELBOW]
-            rw = landmarks[PoseLandmark.RIGHT_WRIST]
+            rs = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+            re = landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW]
+            rw = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST]
 
-            rh = landmarks[PoseLandmark.RIGHT_HIP]
-            rk = landmarks[PoseLandmark.RIGHT_KNEE]
-            ra = landmarks[PoseLandmark.RIGHT_ANKLE]
-            rf = landmarks[PoseLandmark.RIGHT_FOOT_INDEX]
+            rh = landmarks[mp_pose.PoseLandmark.RIGHT_HIP]
+            rk = landmarks[mp_pose.PoseLandmark.RIGHT_KNEE]
+            ra = landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE]
+            rf = landmarks[mp_pose.PoseLandmark.RIGHT_FOOT_INDEX]
 
             # =================================================
             # LEFT SIDE
             # =================================================
 
-            ls = landmarks[PoseLandmark.LEFT_SHOULDER]
-            le = landmarks[PoseLandmark.LEFT_ELBOW]
-            lw = landmarks[PoseLandmark.LEFT_WRIST]
+            ls = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
+            le = landmarks[mp_pose.PoseLandmark.LEFT_ELBOW]
+            lw = landmarks[mp_pose.PoseLandmark.LEFT_WRIST]
 
-            lh = landmarks[PoseLandmark.LEFT_HIP]
-            lk = landmarks[PoseLandmark.LEFT_KNEE]
-            la = landmarks[PoseLandmark.LEFT_ANKLE]
-            lf = landmarks[PoseLandmark.LEFT_FOOT_INDEX]
+            lh = landmarks[mp_pose.PoseLandmark.LEFT_HIP]
+            lk = landmarks[mp_pose.PoseLandmark.LEFT_KNEE]
+            la = landmarks[mp_pose.PoseLandmark.LEFT_ANKLE]
+            lf = landmarks[mp_pose.PoseLandmark.LEFT_FOOT_INDEX]
 
             # =================================================
             # Convert to 2D points
@@ -532,7 +488,7 @@ def analyze_video(video_path: str):
         "detected_frames": detected_frames,
 
         "pose_detection_rate": round(
-            detected_frames / frame_count * 100,
+            detected_frames / processed_frames * 100,
             2
         ),
 
