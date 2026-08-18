@@ -4,9 +4,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Install system dependencies required for MediaPipe
+# Install C++ dependencies for both MediaPipe and OpenCV
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends libegl1 libgles2 \
+    && apt-get install --yes --no-install-recommends \
+        libegl1 \
+        libgles2 \
+        libgl1 \
+        libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
