@@ -42,7 +42,12 @@ import {
   ResponsiveContainer
 } from 'recharts';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8001').replace(/\/$/, '');
+const PRODUCTION_API_URL = 'https://sportai-dashboard-1.onrender.com';
+const LOCAL_API_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.DEV ? LOCAL_API_URL : PRODUCTION_API_URL)
+).replace(/\/$/, '');
 
 const DEMO_DASHBOARD = {
   kpis: { performanceScore: 78, movementRisk: 32, asymmetry: 18, fatigue: 45 },
