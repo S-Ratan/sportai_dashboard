@@ -7,3 +7,4 @@ numpy==2.5.2
 python-dotenv==1.2.2
 supabase==2.31.0
 pytest==9.1.1
+
