@@ -20,16 +20,19 @@ ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 
-    # Vercel production frontend
-    "https://sportai-dashboard-vs45.vercel.app",
+    # Vercel production frontend (stable alias)
+    "https://sportai-dashboard-jade.vercel.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
 
-    # Keep support for Netlify deployments/subdomains
-    allow_origin_regex=r"https://[a-z0-9-]+\.netlify\.app",
+    # Allow every Vercel preview/branch/hash deployment for this project
+    # (e.g. sportai-dashboard-git-main-ratan-code.vercel.app,
+    #  sportai-dashboard-cjciee7ns-ratan-code.vercel.app)
+    # plus Netlify deployments/subdomains.
+    allow_origin_regex=r"https://sportai-dashboard(-[a-z0-9-]+)?\.vercel\.app|https://[a-z0-9-]+\.netlify\.app",
 
     allow_credentials=True,
     allow_methods=["*"],
